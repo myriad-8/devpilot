@@ -138,6 +138,12 @@ describe('parseStageOptions', () => {
 
     expect(result.sessionName).toBe('20240101-000000');
   });
+  it('should fall back to a generated session name when name is empty', () => {
+    const options: QualOpsOptions = { base: '.', name: '' };
+    const result = parseStageOptions(options);
+
+    expect(result.sessionName).toBe('20240115-103045');
+  });
 });
 
 describe('validateStages', () => {
