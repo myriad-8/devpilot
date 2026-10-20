@@ -181,6 +181,15 @@ describe('enforceStageDependencies', () => {
     const result = enforceStageDependencies(['fix', 'judge', 'analyze', 'report', 'review']);
     expect(result).toEqual(['analyze', 'review', 'fix', 'report', 'judge']);
   });
+  it('should not mutate the original stages array', () => {
+    const stages: Stage[] = ['review', 'analyze'];
+    const originalStages = [...stages];
+
+    const result = enforceStageDependencies(stages);
+
+    expect(stages).toEqual(originalStages);
+    expect(result).toEqual(['analyze', 'review']);
+  });
 });
 
 describe('validateAndProcessStages', () => {
