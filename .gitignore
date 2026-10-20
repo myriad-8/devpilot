@@ -1,0 +1,48 @@
+# Runtime and cache
+.qualops/reports/
+.qualops/projects/
+
+# Build output
+dist/
+build/
+
+# Dependencies
+node_modules/
+
+# Coverage
+coverage/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Local development docs
+CLAUDE.local.md
+.claude/settings.local.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Eval results and large fetched data (local only)
+evals/src/results/
+evals/logs/
+evals/datasets/crb/benchmark_data.json
+evals/datasets/crb/repos/
+
+# Provider-dialect smoke harness scratch dir (per-run temp .qualopsrc.*.json files)
+tests/smoke/.tmp/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

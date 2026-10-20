@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "types": ["jest", "node"],
+    "noEmit": true,
+    "ignoreDeprecations": "6.0" // TODO: remove once ts-jest fixes hardcoded Node10 moduleResolution
+  },
+  "include": ["tests/**/*.spec.ts", "tests/**/*.test.ts", "tests/**/*.ts", "src/**/*.d.ts"]
+}

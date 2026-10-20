@@ -1,0 +1,147 @@
+name: 'QualOps Code Quality Analysis'
+description: 'AI-powered code quality analysis with PR comments and GitHub Checks integration'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  anthropic-api-key:
+    description: 'Anthropic API key for Claude AI'
+    required: true
+  github-token:
+    description: 'GitHub token for API access'
+    required: false
+    default: ${{ github.token }}
+  config-path:
+    description: 'Path to .qualopsrc.json config file'
+    required: false
+    default: '.qualops/.qualopsrc.json'
+  stages:
+    description: 'Comma-separated list of stages to run (analyze,review,fix,report,judge)'
+    required: false
+    default: 'analyze,review,judge,report'
+  base-ref:
+    description: 'Base branch or commit for comparison'
+    required: false
+    default: ''
+  files:
+    description: 'Specific files or patterns to analyze (comma-separated)'
+    required: false
+    default: ''
+
+outputs:
+  total-issues:
+    description: 'Total number of issues found'
+  critical-issues:
+    description: 'Number of critical severity issues'
+  high-issues:
+    description: 'Number of high severity issues'
+  quality-passed:
+    description: 'Whether quality thresholds were met (true/false)'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: '20'
+
+    - name: Install and build QualOps
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        npm ci
+        npm run build
+
+    - name: Run QualOps Analysis
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # User-supplied inputs passed as env vars to avoid shell injection via inline interpolation
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_STAGES: ${{ inputs.stages }}
+        # GitHub context values (not user-controlled) kept as interpolations
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: |
+        cd "$GITHUB_WORKSPACE"
+
+        # Build args as an array to avoid word splitting and globbing on $ARGS
+        ARGS=("--config=${INPUT_CONFIG_PATH}")
+
+        if [ -n "${INPUT_BASE_REF}" ]; then
+          ARGS+=("--base=${INPUT_BASE_REF}")
+        elif [ -n "${GITHUB_BASE_REF}" ]; then
+          BASE=$(git merge-base HEAD "origin/${GITHUB_BASE_REF}")
+          ARGS+=("--base=${BASE}")
+        fi
+
+        # On pull_request events use the PR branch head SHA, not github.sha which
+        # points at the auto-generated merge commit (refs/pull/N/merge). A three-dot
+        # diff against a merge commit only shows conflict-resolution changes (0 files
+        # for clean merges), so the full PR diff is lost.
+        if [ -n "${GITHUB_PR_HEAD_SHA}" ]; then
+          ARGS+=("--head=${GITHUB_PR_HEAD_SHA}")
+        elif [ -n "${GITHUB_SHA}" ]; then
+          ARGS+=("--head=${GITHUB_SHA}")
+        fi
+
+        if [ -n "${INPUT_FILES}" ]; then
+          ARGS+=("--files=${INPUT_FILES}")
+        fi
+
+        if [ -n "${INPUT_STAGES}" ]; then
+          ARGS+=("--stages=${INPUT_STAGES}")
+        fi
+
+        node "${GITHUB_ACTION_PATH}/dist/cli.js" "${ARGS[@]}"
+
+    - name: Post GitHub Integration
+      if: always()
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: |
+        # github-integration looks for ./reports/sessions/ relative to cwd.
+        # QualOps writes reports to $GITHUB_WORKSPACE/.qualops/reports/sessions/,
+        # so run from the .qualops directory so the path resolves correctly.
+        cd "$GITHUB_WORKSPACE/.qualops"
+        node "${GITHUB_ACTION_PATH}/dist/cli.js" github-integration
+
+    - name: Upload QualOps Reports
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: qualops-reports
+        path: .qualops/reports/
+        retention-days: 30
+
+    - name: Set Outputs
+      if: always()
+      shell: bash
+      run: |
+        cd "$GITHUB_WORKSPACE"
+
+        if [ -f ".qualops/reports/sessions/*/overall-report.json" ]; then
+          REPORT=$(ls -t .qualops/reports/sessions/*/overall-report.json | head -1)
+          TOTAL=$(jq -r '.totalIssues // 0' "$REPORT")
+          CRITICAL=$(jq -r '.issuesBySeverity.critical // 0' "$REPORT")
+          HIGH=$(jq -r '.issuesBySeverity.high // 0' "$REPORT")
+
+          echo "total-issues=$TOTAL" >> $GITHUB_OUTPUT
+          echo "critical-issues=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high-issues=$HIGH" >> $GITHUB_OUTPUT
+        fi
+
+        if [ -f ".qualops/reports/sessions/*/judge-decision.json" ]; then
+          JUDGE=$(ls -t .qualops/reports/sessions/*/judge-decision.json | head -1)
+          PASSED=$(jq -r '.passed // false' "$JUDGE")
+          echo "quality-passed=$PASSED" >> $GITHUB_OUTPUT
+        fi

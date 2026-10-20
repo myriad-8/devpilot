@@ -1,0 +1,45 @@
+# npm-based QualOps workflow
+# Alternative to the GitHub Action for teams that prefer
+# installing QualOps via npm in their own CI steps.
+
+name: QualOps Code Quality
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  qualops:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0  # Full history for accurate git diff
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+
+      - name: Install QualOps
+        run: npm install -g @eggai/qualops@~0.2
+
+      - name: Run QualOps
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.sha }}
+        run: qualops --base="$BASE_REF" --head="$HEAD_SHA"
+
+      - name: Upload QualOps report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qualops-report
+          path: .qualops/reports/
+          retention-days: 30

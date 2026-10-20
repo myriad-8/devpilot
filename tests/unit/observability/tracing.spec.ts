@@ -1,0 +1,98 @@
+import { trace } from '@opentelemetry/api';
+
+import { setupTracing, getTracer, shutdownTracing, forceFlushTracing } from '@/observability';
+
+describe('tracing', () => {
+  afterEach(async () => {
+    await shutdownTracing();
+    delete process.env.QUALOPS_LANGFUSE_SECRET_KEY;
+    delete process.env.QUALOPS_LANGFUSE_PUBLIC_KEY;
+    delete process.env.QUALOPS_LANGFUSE_BASE_URL;
+    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  });
+
+  describe('setupTracing', () => {
+    it('does not register a provider when no env vars are set', async () => {
+      await setupTracing();
+      // Without Langfuse/OTLP env vars, no tracer provider is registered.
+      // The global provider remains the ProxyTracerProvider wrapping the NoopTracerProvider.
+      const provider = trace.getTracerProvider() as any;
+      expect(provider.getDelegate().constructor.name).toBe('NoopTracerProvider');
+    });
+
+    it('registers a real TracerProvider when Langfuse keys are set', async () => {
+      process.env.QUALOPS_LANGFUSE_SECRET_KEY = 'sk-test';
+      process.env.QUALOPS_LANGFUSE_PUBLIC_KEY = 'pk-test';
+      process.env.QUALOPS_LANGFUSE_BASE_URL = 'http://localhost:3000';
+
+      await setupTracing();
+
+      // @opentelemetry/sdk-node registers a TracerProvider instance (previously
+      // NodeTracerProvider prior to the 0.220.0 sdk-trace consolidation).
+      // Assert it's no longer the no-op delegate rather than a specific class
+      // name, so this stays resilient to future internal OTel renames.
+      const provider = trace.getTracerProvider() as any;
+      expect(provider.getDelegate().constructor.name).not.toBe('NoopTracerProvider');
+    });
+
+    it('is idempotent — calling twice does not register a second provider', async () => {
+      process.env.QUALOPS_LANGFUSE_SECRET_KEY = 'sk-test';
+      process.env.QUALOPS_LANGFUSE_PUBLIC_KEY = 'pk-test';
+      process.env.QUALOPS_LANGFUSE_BASE_URL = 'http://localhost:3000';
+
+      await setupTracing();
+      const providerAfterFirst = (trace.getTracerProvider() as any).getDelegate();
+
+      await setupTracing();
+      const providerAfterSecond = (trace.getTracerProvider() as any).getDelegate();
+
+      // Same provider instance — not replaced on second call.
+      expect(providerAfterSecond).toBe(providerAfterFirst);
+    });
+  });
+
+  describe('shutdownTracing', () => {
+    it('clears state so a subsequent call is a no-op', async () => {
+      process.env.QUALOPS_LANGFUSE_SECRET_KEY = 'sk-test';
+      process.env.QUALOPS_LANGFUSE_PUBLIC_KEY = 'pk-test';
+      process.env.QUALOPS_LANGFUSE_BASE_URL = 'http://localhost:3000';
+
+      await setupTracing();
+      await shutdownTracing();
+
+      // After shutdown _state is null; a second shutdown must not throw.
+      await expect(shutdownTracing()).resolves.toBeUndefined();
+    });
+
+    it('is a no-op when tracing was never initialized', async () => {
+      await expect(shutdownTracing()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('forceFlushTracing', () => {
+    it('is a no-op when tracing is not initialized', async () => {
+      await expect(forceFlushTracing()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('span context propagation', () => {
+    it('makes the span available as the active span inside startActiveSpan', async () => {
+      const tracer = getTracer();
+      await tracer.startActiveSpan('parent', async (parentSpan) => {
+        expect(trace.getActiveSpan()).toBe(parentSpan);
+        parentSpan.end();
+      });
+    });
+
+    it('restores the previous active span after the callback returns', async () => {
+      const tracer = getTracer();
+      const outerSpanBefore = trace.getActiveSpan();
+
+      await tracer.startActiveSpan('child', async (childSpan) => {
+        childSpan.end();
+      });
+
+      expect(trace.getActiveSpan()).toBe(outerSpanBefore);
+    });
+  });
+});

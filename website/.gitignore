@@ -1,0 +1,34 @@
+# build output
+dist/
+# generated types
+.astro/
+
+# synced from elsewhere in the repo by scripts/sync-root-docs.mjs
+src/content/docs/changelog.md
+src/content/docs/contributing.md
+src/content/docs/github-action/setup.md
+src/content/docs/examples/agents/comment-rewriter.md
+src/content/docs/examples/agents/migration-checker.md
+src/content/docs/examples/agents/rxjs-migration.md
+src/content/docs/examples/agents/angular-signals.md
+src/content/docs/examples/claude-code-command.md
+
+# generated from action.yml by scripts/gen-action-docs.mjs
+src/content/docs/github-action/inputs.mdx
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# environment variables
+.env
+.env.production
+
+# macOS-specific files
+.DS_Store
